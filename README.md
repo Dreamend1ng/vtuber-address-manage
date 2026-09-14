@@ -62,13 +62,19 @@
 - 提交内容使用**活动专属公钥（RSA-OAEP + AES-GCM 信封加密）**，即使 Token 或仓库泄漏，地址也无法被他人读取；
 - 查询文件只包含「手机号加盐哈希 + 姓名掩码 + 快递单号」，不含地址与明文手机号。
 
-## 部署到 GitHub Pages（约 3 分钟）
+## 部署到 GitHub Pages（全程浏览器操作，约 3 分钟）
 
-1. 把这个仓库 **Fork** 到自己的账号（或下载后上传到自己的仓库）；
-2. 仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**；
-3. 向 `main` 分支提交任意修改（或手动运行一次 Actions 里的 Deploy 工作流）；
-4. 完成后访问 `https://<你的用户名>.github.io/<仓库名>/`。
+不需要安装任何工具、也不需要命令行：
 
+1. **复制仓库**：打开本仓库页面，点右上角 **Use this template → Create a new repository**，给新仓库起个名字（例如 `my-mailroom`），可见性选 **Public**，点 Create；
+   > 免费账号的 GitHub Pages 只对 Public 仓库开放。
+2. **开启 Pages**：在新仓库进入 **Settings → Pages**，把 **Build and deployment 的 Source** 选为 **GitHub Actions**；
+3. **运行部署**：进入 **Actions** 标签，选择左侧的 **Deploy to GitHub Pages**，点右侧的 **Run workflow**；等约 1 分钟变成绿色 ✓；
+4. **访问站点**：`https://<你的用户名>.github.io/<仓库名>/`。
+
+之后的所有修改（例如改 `src/config.ts` 里的应用名与主题色）都会自动重新部署。
+
+> 也可以用 Fork 的方式复制，但 Fork 仓库需要额外手动启用 Actions；直接「Use this template」最省事。
 > 同样可以部署到 Cloudflare Pages、Netlify、Vercel：构建命令 `npm run build`，产物目录 `dist`。
 
 ## 第一次使用
