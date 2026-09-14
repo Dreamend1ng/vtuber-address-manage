@@ -57,7 +57,10 @@ export async function getVaultMeta(): Promise<VaultMeta | undefined> {
 }
 
 export async function saveVaultMeta(meta: VaultMeta): Promise<void> {
-  await (await db()).put('vault', meta)
+  // VaultMeta 是纯 JSON 数据，这里深拷贝一份写入，
+  // 确保任何情况下都不会把 Vue 响应式代理（无法被结构化克隆）放进 IndexedDB
+  const plain = JSON.parse(JSON.stringify(meta)) as VaultMeta
+  await (await db()).put('vault', plain)
 }
 
 export async function getAllRecords(): Promise<StoredRecord[]> {

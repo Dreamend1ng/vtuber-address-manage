@@ -1,4 +1,4 @@
-import { reactive, readonly } from 'vue'
+import { reactive, readonly, toRaw } from 'vue'
 import {
   KDF_ITERATIONS,
   deriveKek,
@@ -43,7 +43,8 @@ function delay(ms: number): Promise<void> {
 
 function requireMeta(): VaultMeta {
   if (!state.meta) throw new Error('保险库尚未初始化')
-  return state.meta
+  // 返回原始对象：Vue 的响应式代理无法被 IndexedDB 的结构化克隆处理
+  return toRaw(state.meta)
 }
 
 async function buildCryptoConfig(
