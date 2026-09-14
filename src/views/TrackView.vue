@@ -4,24 +4,22 @@ import { useRoute } from 'vue-router'
 import { decodeUrlPayload } from '../crypto/encoding'
 import type { FanFormConfig } from '../types/models'
 import { GithubError, getFile, type GithubTarget } from '../services/github'
-import { hashPhone, normalizePhone } from '../utils/tracking'
+import {
+  derivePhoneKey,
+  normalizePhone,
+  phoneTail,
+  tryDecryptTrackingPayload,
+  type EncryptedEntry,
+  type TrackingPayload,
+} from '../utils/tracking'
 import { siteConfig } from '../config'
 import { copyText } from '../utils/clipboard'
-
-interface TrackingEntry {
-  h: string
-  tail: string
-  mask: string
-  carrier: string
-  trackingNo: string
-  shippedAt: number
-}
 
 interface TrackingFile {
   v: number
   updatedAt: string
   salt: string
-  entries: TrackingEntry[]
+  entries: EncryptedEntry[]
 }
 
 type Phase = 'loading' | 'error' | 'no-data' | 'ready'
@@ -39,7 +37,9 @@ const formKey = ref('')
 const phone = ref('')
 const querying = ref(false)
 const searched = ref(false)
-const results = ref<TrackingEntry[]>([])
+const searchedTail = ref('')
+const results = ref<TrackingPayload[]>([])
+const noDataHint = ref('活动主还没有发布快递单号。发货完成后即可用手机号查询，请稍后再来。')
 
 const themeStyle = computed(() => ({ '--fan-theme': themeColor.value }))
 
@@ -87,7 +87,14 @@ onMounted(async () => {
       phase.value = 'no-data'
       return
     }
-    tracking.value = JSON.parse(new TextDecoder().decode(trackingFile.bytes)) as TrackingFile
+    const parsed = JSON.parse(new TextDecoder().decode(trackingFile.bytes)) as TrackingFile
+    if (parsed.v !== 2 || !Array.isArray(parsed.entries)) {
+      // 旧版（v1）数据可被离线快速爆破，已被弃用
+      noDataHint.value = '查询数据格式已升级，请活动主在「发货」页点击「更新查询数据」后重试。'
+      phase.value = 'no-data'
+      return
+    }
+    tracking.value = parsed
     phase.value = 'ready'
   } catch (error) {
     if (error instanceof GithubError && (error.status === 401 || error.status === 403)) {
@@ -112,20 +119,25 @@ async function search(): Promise<void> {
   try {
     const current = tracking.value
     if (!current) return
-    const target = await hashPhone(input, current.salt)
-    results.value = current.entries.filter((entry) => entry.h === target)
+    // 用输入的手机号派生一次密钥，再逐条尝试解密（只有本人那条能被解开）
+    const key = await derivePhoneKey(input, current.salt)
+    const found: TrackingPayload[] = []
+    for (const entry of current.entries) {
+      const payload = await tryDecryptTrackingPayload(key, entry)
+      if (payload) found.push(payload)
+    }
+    results.value = found
+    searchedTail.value = phoneTail(input)
     searched.value = true
-  } catch {
-    errorMessage.value = '查询失败，请稍后重试'
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '查询失败，请稍后重试'
   } finally {
     querying.value = false
   }
 }
 
-async function copyTracking(entry: TrackingEntry): Promise<void> {
+async function copyTracking(entry: TrackingPayload): Promise<void> {
   await copyText(entry.trackingNo)
-  const suffix = entry.carrier ? `（${entry.carrier}）` : ''
-  void suffix
 }
 
 const formLink = computed(() => (rawPayload.value ? `#/f?d=${rawPayload.value}` : ''))
@@ -156,7 +168,7 @@ function formatTime(timestamp: number): string {
 
       <div v-else-if="phase === 'no-data'" class="fan-card fan-card--plain">
         <h1 class="track-title">{{ eventName || '快递单号查询' }}</h1>
-        <p class="track-muted">活动主还没有发布快递单号。发货完成后即可用手机号查询，请稍后再来。</p>
+        <p class="track-muted">{{ noDataHint }}</p>
         <a v-if="formLink" class="track-link" :href="formLink">返回填写收件信息</a>
       </div>
 
@@ -194,7 +206,7 @@ function formatTime(timestamp: number): string {
           <div v-for="(entry, index) in results" :key="index" class="track-result">
             <div class="track-result__head">
               <span class="track-result__name">{{ entry.mask || '收件人' }}</span>
-              <span v-if="entry.tail" class="track-result__tail mono">…{{ entry.tail }}</span>
+              <span v-if="searchedTail" class="track-result__tail mono">手机号 …{{ searchedTail }}</span>
             </div>
             <div class="track-result__no-row">
               <span class="track-result__no mono">{{ entry.trackingNo }}</span>

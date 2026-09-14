@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { hashPhone, maskName, normalizePhone, phoneTail } from './tracking'
+import {
+  derivePhoneKey,
+  encryptTrackingPayload,
+  maskName,
+  normalizePhone,
+  phoneTail,
+  tryDecryptTrackingPayload,
+} from './tracking'
 
 describe('查询页工具', () => {
   it('手机号归一化', () => {
@@ -14,12 +21,20 @@ describe('查询页工具', () => {
     expect(maskName('')).toBe('')
   })
 
-  it('同一手机号 + 同一盐得到一致哈希，盐不同则不同', async () => {
-    const first = await hashPhone('13800000000', 'saltA')
-    const second = await hashPhone('+86 138-0000-0000', 'saltA')
-    const other = await hashPhone('13800000000', 'saltB')
-    expect(first).toBe(second)
-    expect(first).not.toBe(other)
+  it('查单记录加密：本人手机号可解开，其他号码解不开', async () => {
+    const salt = 'event-salt-123'
+    const payload = { mask: '张*', carrier: '顺丰', trackingNo: 'SF1234567890', shippedAt: 1700000000000 }
+    const entry = await encryptTrackingPayload(await derivePhoneKey('13800000000', salt), payload)
+
+    // 归一化后是同一个号码，可以解开
+    const sameKey = await derivePhoneKey('+86 138-0000-0000', salt)
+    expect(await tryDecryptTrackingPayload(sameKey, entry)).toEqual(payload)
+
+    // 别的号码解不开（GCM 认证失败）
+    const otherKey = await derivePhoneKey('13900000000', salt)
+    expect(await tryDecryptTrackingPayload(otherKey, entry)).toBeNull()
+
     expect(phoneTail('+86 138-0000-1234')).toBe('1234')
+    expect(JSON.stringify(entry)).not.toContain('13800000000')
   })
 })

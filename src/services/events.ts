@@ -14,7 +14,8 @@ import { GithubError, checkGithubReachability, getFile, getRepo, isValidRepo, li
 import { addresses, collectionSettings, createAddress, createEvent, saveEvent } from './records'
 import { buildXlsx } from '../utils/xlsx'
 import { downloadBlob, timestampForFilename } from '../utils/download'
-import { hashPhone, maskName, phoneTail } from '../utils/tracking'
+import { hashText } from '../utils/device'
+import { derivePhoneKey, encryptTrackingPayload, maskName, type EncryptedEntry } from '../utils/tracking'
 
 const KEY_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
 
@@ -146,6 +147,7 @@ export async function syncEventSubmissions(
   onProgress?: ProgressCallback,
 ): Promise<SyncResult> {
   const target = targetOf()
+  await assertRemoteConfigMatches(event, target)
   const entries = await listDirectory(target, `events/${event.formKey}/submissions`)
   const seen = new Set(event.importedRemotePaths)
   const pending = entries.filter((entry) => !seen.has(entry.path))
@@ -220,9 +222,41 @@ async function ensureTrackingSalt(event: CollectionEvent): Promise<string> {
   return event.trackingSalt
 }
 
+/** 公钥指纹：用于校验远端表单配置是否被替换 */
+export async function publicKeyFingerprint(key: JsonWebKey): Promise<string> {
+  return hashText(JSON.stringify([key.kty, key.n, key.e]))
+}
+
+/**
+ * 同步前校验远端 config.json 的公钥与本地活动密钥一致。
+ * 若收集链接被转发后有人替换了公钥，后续粉丝提交会被加密到攻击者密钥——
+ * 这里发现不一致就中止同步并告警。
+ */
+async function assertRemoteConfigMatches(event: CollectionEvent, target: GithubTarget): Promise<void> {
+  const file = await getFile(target, `events/${event.formKey}/config.json`)
+  if (!file) return
+  let config: FanFormConfig
+  try {
+    config = JSON.parse(utf8Decode(file.bytes)) as FanFormConfig
+  } catch {
+    throw new Error('远端表单配置无法解析，收集仓库可能已被篡改，请检查后重新发布表单')
+  }
+  if (!config.publicKey) {
+    throw new Error('远端表单配置缺少公钥，收集仓库可能已被篡改，请检查后重新发布表单')
+  }
+  const [localFingerprint, remoteFingerprint] = await Promise.all([
+    publicKeyFingerprint(event.keys.publicKey),
+    publicKeyFingerprint(config.publicKey),
+  ])
+  if (localFingerprint !== remoteFingerprint) {
+    throw new Error('远端表单公钥与本地活动密钥不一致：收集仓库可能被篡改，已停止同步。请检查仓库并重新发布表单')
+  }
+}
+
 /**
  * 把已发货的单号发布到收集仓库供粉丝查询。
- * 文件中不包含明文手机号：用「手机号 + 活动加盐值」的哈希做匹配。
+ * 每条记录都以「手机号 + 活动盐值」派生的密钥加密（PBKDF2 高迭代 + AES-GCM），
+ * 文件中没有明文手机号，也没有可被快速比对的哈希；未猜中手机号时连掩码与单号都看不到。
  */
 export async function publishTracking(event: CollectionEvent): Promise<number> {
   const target = targetOf()
@@ -230,18 +264,24 @@ export async function publishTracking(event: CollectionEvent): Promise<number> {
   const list = addresses.value.filter(
     (address) => address.eventId === event.id && address.shippedAt && address.trackingNo,
   )
-  const entries = []
-  for (const address of list) {
-    entries.push({
-      h: await hashPhone(address.phone, salt),
-      tail: phoneTail(address.phone),
-      mask: maskName(address.name),
-      carrier: address.carrier ?? '',
-      trackingNo: address.trackingNo ?? '',
-      shippedAt: address.shippedAt ?? 0,
-    })
+  const entries: EncryptedEntry[] = []
+  const CONCURRENCY = 4
+  for (let index = 0; index < list.length; index += CONCURRENCY) {
+    const batch = list.slice(index, index + CONCURRENCY)
+    const encrypted = await Promise.all(
+      batch.map(async (address) => {
+        const key = await derivePhoneKey(address.phone, salt)
+        return encryptTrackingPayload(key, {
+          mask: maskName(address.name),
+          carrier: address.carrier ?? '',
+          trackingNo: address.trackingNo ?? '',
+          shippedAt: address.shippedAt ?? 0,
+        })
+      }),
+    )
+    entries.push(...encrypted)
   }
-  const payload = { v: 1, updatedAt: new Date().toISOString(), salt, entries }
+  const payload = { v: 2, updatedAt: new Date().toISOString(), salt, entries }
   await putFileEnsuring(
     target,
     `events/${event.formKey}/tracking.json`,

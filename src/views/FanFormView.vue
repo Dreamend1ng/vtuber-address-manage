@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { decodeUrlPayload, utf8Encode } from '../crypto/encoding'
 import { encryptEnvelope } from '../crypto/envelope'
@@ -31,13 +31,17 @@ const target = ref<GithubTarget | null>(null)
 const formKey = ref('')
 const submitting = ref(false)
 
-/* 防捣乱溯源信息：读取配置后开始采集，全部进加密信封 */
+/* 防捣乱溯源信息：设备信息仅在本机采集；IP 查询在粉丝勾选同意后才发起，避免先于同意把 IP 发给第三方 */
 const deviceInfo = ref<DeviceInfo | null>(null)
 const ipLookup = ref<IpLookup | null>(null)
 let ipPromise: Promise<IpLookup | null> | null = null
 
-function startMetaCollection(): void {
-  deviceInfo.value = collectDeviceInfo()
+function prepareDeviceInfo(): void {
+  if (!deviceInfo.value) deviceInfo.value = collectDeviceInfo()
+}
+
+function startIpLookup(): void {
+  if (ipPromise || !config.value?.collectMeta) return
   ipPromise = lookupIpInfo()
   void ipPromise.then((result) => {
     ipLookup.value = result
@@ -57,6 +61,16 @@ const form = reactive({
   /** 蜜罐字段：正常粉丝不会看到，填写者视为机器人 */
   trap: '',
 })
+
+// 勾选同意后才开始采集网络信息（第三方 IP 查询服务）
+watch(
+  () => form.consent,
+  (consent) => {
+    if (!consent) return
+    prepareDeviceInfo()
+    startIpLookup()
+  },
+)
 
 const errors = reactive<Record<string, string>>({})
 
@@ -154,9 +168,6 @@ async function load(): Promise<void> {
       }
     }
     phase.value = config.value.status === 'closed' ? 'closed' : 'ready'
-    if (config.value.collectMeta) {
-      startMetaCollection()
-    }
   } catch (error) {
     if (error instanceof GithubError && (error.status === 401 || error.status === 403)) {
       fail('收集链接已失效，请联系活动主更新链接')
@@ -195,6 +206,7 @@ async function submit(): Promise<void> {
       consentAt: Date.now(),
     }
     if (config.value.collectMeta) {
+      prepareDeviceInfo()
       const info = deviceInfo.value ?? collectDeviceInfo()
       const network =
         ipLookup.value ?? (ipPromise ? await Promise.race([ipPromise, sleep(1500).then(() => null)]) : null)
