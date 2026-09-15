@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Download, Link, Plus, Refresh, Upload, View } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Download, Grid, Link, Plus, Refresh, Upload, View } from '@element-plus/icons-vue'
 import type { Address } from '../types/models'
 import { collectionSettings, eventSubmissions, findEvent, removeAddress, saveEvent } from '../services/records'
 import {
@@ -173,6 +173,24 @@ async function copyShare(): Promise<void> {
   }
   await copyText(shareLink.value)
   ElMessage.success('收集链接已复制')
+}
+
+/** 制作二维码：复制链接并打开二维码工具（不依赖对方是否支持预填） */
+async function openQrMaker(target: string | number | object): Promise<void> {
+  const link = shareLink.value
+  if (!link) {
+    ElMessage.warning('请先在「设置 → 收集仓库」里配置并发布表单')
+    activeTab.value = 'collect'
+    return
+  }
+  try {
+    await copyText(link)
+  } catch {
+    // 复制失败也继续打开页面，手动复制即可
+  }
+  const url = target === 'qrbtf' ? 'https://qrbtf.com/' : 'https://cli.im/'
+  window.open(url, '_blank', 'noopener')
+  ElMessage.success('已复制收集链接，在打开的页面里粘贴即可生成二维码')
 }
 
 async function copyTrackLink(): Promise<void> {
@@ -465,6 +483,15 @@ const sourceLabel = (item: Address): string =>
             <div class="link-row">
               <el-input :model-value="shareLink" readonly placeholder="配置收集仓库后生成链接" />
               <el-button :icon="Link" :disabled="!shareLink" @click="copyShare">复制</el-button>
+              <el-dropdown trigger="click" :disabled="!shareLink" @command="openQrMaker">
+                <el-button :icon="Grid" :disabled="!shareLink">制作二维码</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="cli">普通二维码 · 草料</el-dropdown-item>
+                    <el-dropdown-item command="qrbtf">美观二维码 · QRBTF</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </section>
         </div>
@@ -840,6 +867,7 @@ const sourceLabel = (item: Address): string =>
 .link-row {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .guide-list {
