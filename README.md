@@ -62,30 +62,134 @@
 - 提交内容使用**活动专属公钥（RSA-OAEP + AES-GCM 信封加密）**，即使 Token 或仓库泄漏，地址也无法被他人读取；
 - 查询文件只包含「手机号加盐哈希 + 姓名掩码 + 快递单号」，不含地址与明文手机号。
 
-## 部署到 GitHub Pages（全程浏览器操作，约 3 分钟）
+## 部署教程：从复制模板到站点上线（全程浏览器操作，约 3 分钟）
 
-不需要安装任何工具、也不需要命令行：
+不需要安装任何工具、也不需要命令行，下面每一步都有截图对照。
 
-1. **复制仓库**：打开本仓库页面，点右上角 **Use this template → Create a new repository**，给新仓库起个名字（例如 `my-mailroom`），可见性选 **Public**，点 Create；
-   > 免费账号的 GitHub Pages 只对 Public 仓库开放。
-2. **开启 Pages**：在新仓库进入 **Settings → Pages**，把 **Build and deployment 的 Source** 选为 **GitHub Actions**；
-3. **运行部署**：进入 **Actions** 标签，选择左侧的 **Deploy to GitHub Pages**，点右侧的 **Run workflow**；等约 1 分钟变成绿色 ✓；
-4. **访问站点**：`https://<你的用户名>.github.io/<仓库名>/`。
+### 第 1 步 · 复制模板仓库
 
-之后的所有修改（例如改 `src/config.ts` 里的应用名与主题色）都会自动重新部署。
+打开[本仓库页面](https://github.com/Dreamend1ng/vtuber-address-manage)，点右上角绿色的 **Use this template → Create a new repository**：
 
+![Use this template 下拉菜单](docs/tutorial/github-use-template.png)
+
+给新仓库起个名字（例如 `my-mailroom`），可见性保持 **Public**，点 **Create repository**：
+
+![从模板创建仓库](docs/tutorial/github-create-from-template.png)
+
+> 免费账号的 GitHub Pages 只对 **Public** 仓库开放，所以这里不要选 Private。
 > 也可以用 Fork 的方式复制，但 Fork 仓库需要额外手动启用 Actions；直接「Use this template」最省事。
+
+### 第 2 步 · 开启 GitHub Pages
+
+进入新仓库的 **Settings → Pages**，把 **Build and deployment → Source** 选为 **GitHub Actions**（模板里已经写好了部署工作流，这一步只是告诉 GitHub 用它来发布）：
+
+![Pages 设置：Source 选 GitHub Actions](docs/tutorial/github-pages-settings.png)
+
+### 第 3 步 · 运行部署工作流
+
+进入 **Actions** 标签，左侧选择 **Deploy to GitHub Pages**，点右侧的 **Run workflow → Run workflow**。等约 1 分钟，运行记录变成绿色 ✓ 就部署完成了（此后每次推送代码都会自动重新部署）：
+
+![Actions：Run workflow 与部署成功的绿色 ✓](docs/tutorial/github-actions-workflow.png)
+
+### 第 4 步 · 访问你的站点
+
+打开 `https://<你的用户名>.github.io/<仓库名>/`，看到「寄件台」的界面就说明部署成功了。之后的所有修改（例如改 `src/config.ts` 里的应用名与主题色）都会自动重新部署。
+
 > 同样可以部署到 Cloudflare Pages、Netlify、Vercel：构建命令 `npm run build`，产物目录 `dist`。
 
-## 第一次使用
+## 使用教程：从第一次打开到把周边寄出去
 
-1. **设置主密码**：首次打开会引导设置主密码，并生成一次性恢复码——请离线保存（忘密码 + 丢恢复码 = 数据无法恢复）；
-2. **配置收集仓库**（在「设置 → 收集仓库」）：
-   1. 新建一个**专用私有仓库**（例如 `vam-collect`）；
-   2. 在 GitHub 的 [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new) 新建 Token：**只勾选这个仓库**，权限仅 **Contents: Read and write**；
-   3. 把仓库名（`用户名/仓库名`）和 Token 填入应用，点「测试连接」；
-3. **创建活动**：填写活动名称（如「梦末百天纪念回」）→ 设计表单（主题色/背景图）→ 点「发布 / 更新表单」→ 复制收集链接发给粉丝；
-4. **发货**：到「发货」页进入活动，同步提交 → 填单号或上传 Excel → 一键发货 → 复制查询链接发给粉丝。
+下面用一场完整的演示活动（「梦末百天纪念回」）走一遍全流程，截图均来自线上站点实际操作。
+
+### 第 1 步 · 准备专用收集仓库和 Token（只需做一次）
+
+粉丝的提交需要一个**专用私有仓库**来存放（不要用放代码的主仓库）。在 GitHub 上新建仓库，名字随意（例如 `vam-collect`），可见性务必选 **Private**：
+
+![新建专用私有仓库](docs/tutorial/github-new-private-repo.png)
+
+再在 GitHub 的 [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new) 页面新建一个 Token：填个名字，**Repository access 选 Only select repositories**，只勾选刚才这个专用仓库：
+
+![Token 只授权专用仓库](docs/tutorial/github-token-repo-access.png)
+
+最后在 **Permissions → Repository permissions** 里给 **Contents** 设置 **Read and write**（这是唯一需要的权限），点 Generate token 后**立刻复制保存**（Token 只显示一次）：
+
+![Contents 权限设为 Read and write](docs/tutorial/github-token-permissions.png)
+
+### 第 2 步 · 设置主密码并配置收集仓库
+
+首次打开站点会引导你设置**主密码**，并生成一次性**恢复码**——请离线保存（忘密码 + 丢恢复码 = 数据无法恢复）。之后每次打开都需要在锁屏页输入主密码解锁：
+
+![锁屏：主密码只在本机参与密钥计算](docs/screenshots/unlock.png)
+
+进入「**设置 → 收集仓库**」，把刚才的仓库名（`用户名/仓库名`）和 Token 填进去，点「**测试连接**」，提示通过后保存：
+
+![设置收集仓库并测试连接](docs/tutorial/settings-repo.png)
+
+> 这一配置是**全局**的：之后所有活动共用它，创建新活动时无需重复填写。
+
+### 第 3 步 · 创建活动
+
+到「**活动**」页点「**新建活动**」，填写活动名称（如「梦末百天纪念回」）和表单说明。每个活动会生成一对独立密钥，粉丝提交的地址用这把公钥加密后才上传：
+
+![新建活动对话框](docs/tutorial/event-create.png)
+
+### 第 4 步 · 设计并发布表单
+
+进入活动详情的「**表单设计**」标签，可以修改名称、说明、**主题色**、**背景图**，右侧是粉丝端的实时预览：
+
+![表单设计与粉丝端实时预览](docs/tutorial/event-form-design.png)
+
+点右上角「**发布 / 更新表单**」，表单配置（含活动公钥）就会写入你的专用仓库，状态里会显示「上次发布」的时间：
+
+![发布成功](docs/tutorial/event-published.png)
+
+### 第 5 步 · 把收集链接发给粉丝
+
+发布后，收集链接就生成好了（表单设计页右侧可见），点「复制」发给粉丝——微信、抖音私信都可以。粉丝在手机上打开是这样的（无需注册、无需账号）：
+
+![粉丝填表页（移动端）](docs/tutorial/fan-form-mobile.png)
+
+粉丝填写抖音号、收件人、手机号和地址，勾选同意后点「提交收件信息」——数据会**先在粉丝浏览器里加密，再写入你的仓库**，只有你的保险库能解开：
+
+![粉丝填写完成](docs/tutorial/fan-form-filled.png)
+
+提交后会看到「提交成功」：
+
+![提交成功](docs/tutorial/fan-form-success.png)
+
+### 第 6 步 · 同步提交到本机
+
+回到活动详情的「**提交列表**」标签，点「**同步提交**」从仓库拉取密文并解密。收到的地址一目了然，还带有 IP / 设备等防捣乱溯源信息（可在设置中关闭采集）：
+
+![同步提交后收到地址](docs/tutorial/submissions-synced.png)
+
+### 第 7 步 · 填单号、一键发货
+
+到「**发货**」页进入活动（或从提交列表点「填写单号」）。可以手动填，也可以**上传 Excel / CSV 批量解析**（按手机号自动匹配、核对后预填）：
+
+![发货列表](docs/tutorial/shipping-list.png)
+
+![发货台](docs/tutorial/shipping-desk.png)
+
+填快递公司和单号后保存，状态会变成「待确认」，确认无误后点右上角「**一键发货**」：
+
+![填写快递单号](docs/tutorial/shipping-fill-dialog.png)
+
+![核对预填的单号](docs/tutorial/shipping-prefill.png)
+
+发货后状态变为「已发货」，单号同时发布到查询页。支持改单号、撤销发货，也能一键导出 Excel：
+
+![已发货](docs/tutorial/shipping-shipped.png)
+
+### 第 8 步 · 粉丝用手机号自助查单
+
+把活动的「**查询链接**」发到粉丝群（发货页和活动详情里都能复制）。粉丝输入填表时的手机号即可查到单号——页面只显示**掩码姓名、掩码手机号和快递单号**，不会暴露完整地址：
+
+![粉丝查询快递单号](docs/tutorial/track-result.png)
+
+> 每次集中发货结束后，建议到「**备份 / 恢复**」导出一份加密备份（连表单背景图一起打包），放进网盘也安全：
+>
+> ![导出加密备份](docs/screenshots/backup.png)
 
 ## 日常流程
 
