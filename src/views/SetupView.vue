@@ -3,8 +3,9 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { siteConfig } from '../config'
 import { setupVault } from '../services/vault'
-import { saveCollectionSettings } from '../services/records'
+import { saveCollectionSettings, saveUpdateSettings } from '../services/records'
 import { testCollection } from '../services/events'
+import { defaultUpstream, detectOwnRepo } from '../services/updater'
 import { isValidRepo, normalizeRepo } from '../services/github'
 import { copyText } from '../utils/clipboard'
 import { downloadText, timestampForFilename } from '../utils/download'
@@ -124,6 +125,36 @@ async function finishWithRepo(): Promise<void> {
 function skipRepo(): void {
   step.value = 3
 }
+
+/* 第 4 步：版本更新（可选） */
+const updateSetup = reactive({
+  enabled: true,
+  upstream: defaultUpstream(),
+  ownRepo: detectOwnRepo(),
+  token: '',
+})
+const savingUpdateStep = ref(false)
+
+async function finishUpdateStep(save: boolean): Promise<void> {
+  if (!save) {
+    step.value = 4
+    return
+  }
+  savingUpdateStep.value = true
+  try {
+    await saveUpdateSettings({
+      enabled: updateSetup.enabled,
+      upstream: updateSetup.upstream.trim() || defaultUpstream(),
+      ownRepo: updateSetup.ownRepo.trim(),
+      token: updateSetup.token.trim(),
+    })
+    step.value = 4
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    savingUpdateStep.value = false
+  }
+}
 </script>
 
 <template>
@@ -147,6 +178,7 @@ function skipRepo(): void {
             <el-step title="设置主密码" />
             <el-step title="保存恢复码" />
             <el-step title="收集仓库" />
+            <el-step title="更新设置" />
             <el-step title="完成" />
           </el-steps>
 
@@ -266,7 +298,7 @@ function skipRepo(): void {
                 :loading="savingRepo"
                 @click="finishWithRepo"
               >
-                保存并完成
+                保存并继续
               </el-button>
               <el-button size="large" @click="skipRepo">稍后配置</el-button>
             </div>
@@ -286,7 +318,47 @@ function skipRepo(): void {
             </p>
           </div>
 
-          <!-- 第 4 步：完成 -->
+          <!-- 第 4 步：版本更新（可选） -->
+          <div v-else-if="step === 3" class="setup-section">
+            <p class="setup-lead">
+              开启后每次解锁会检查上游是否有新版本；配置更新 Token 后可以一键把自己的站点更新到最新。
+              不配置也能正常使用，只是更新时需要手动同步。
+            </p>
+            <el-form label-position="top">
+              <el-form-item label="上游仓库">
+                <el-input v-model="updateSetup.upstream" placeholder="Dreamend1ng/vtuber-address-manage" spellcheck="false" />
+              </el-form-item>
+              <el-form-item label="你的站点仓库">
+                <el-input v-model="updateSetup.ownRepo" placeholder="你的用户名/仓库名（GitHub Pages 会自动识别）" spellcheck="false" />
+              </el-form-item>
+              <el-form-item label="更新 Token（选填）">
+                <el-input v-model="updateSetup.token" type="password" show-password placeholder="github_pat_..." spellcheck="false" />
+              </el-form-item>
+            </el-form>
+            <p class="setup-note">
+              还没有 Token？
+              <a
+                href="https://github.com/settings/personal-access-tokens/new"
+                target="_blank"
+                rel="noopener noreferrer"
+              >创建 fine-grained Token</a>
+              ：Repository access 勾选<strong>你自己的站点仓库</strong>，权限只需 Contents: Read and write。
+            </p>
+            <div class="setup-actions">
+              <el-button
+                type="primary"
+                size="large"
+                class="auth-action setup-primary"
+                :loading="savingUpdateStep"
+                @click="finishUpdateStep(true)"
+              >
+                保存并完成
+              </el-button>
+              <el-button size="large" @click="finishUpdateStep(false)">跳过</el-button>
+            </div>
+          </div>
+
+          <!-- 第 5 步：完成 -->
           <div v-else class="setup-section">
             <h2 class="done-title">保险库已就绪</h2>
             <ul class="done-list">

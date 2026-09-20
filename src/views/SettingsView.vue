@@ -3,8 +3,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { siteConfig } from '../config'
-import { addresses, collectionSettings, saveCollectionSettings } from '../services/records'
+import { addresses, collectionSettings, saveCollectionSettings, saveUpdateSettings, updateSettings } from '../services/records'
 import { testCollection } from '../services/events'
+import { checkForUpdate, defaultUpstream, detectOwnRepo, showUpdateNotice } from '../services/updater'
 import { isValidRepo, normalizeRepo } from '../services/github'
 import {
   changePassword,
@@ -84,6 +85,69 @@ async function applyAntiAbuse(value: boolean): Promise<void> {
     recordAntiAbuse: value,
   })
   ElMessage.success(value ? '将记录提交者 IP 与设备信息' : '已关闭 IP 与设备信息收集')
+}
+
+/* ---------- 版本更新 ---------- */
+const updateForm = reactive({ upstream: defaultUpstream(), ownRepo: detectOwnRepo(), token: '' })
+const savingUpdate = ref(false)
+const checkingUpdate = ref(false)
+
+watch(
+  updateSettings,
+  (value) => {
+    if (!value) return
+    updateForm.upstream = value.upstream || defaultUpstream()
+    updateForm.ownRepo = value.ownRepo || detectOwnRepo()
+    updateForm.token = value.token
+  },
+  { immediate: true },
+)
+
+const updateEnabled = computed({
+  get: () => updateSettings.value?.enabled === true,
+  set: (value: boolean) => {
+    void saveUpdateForm(value, value ? '已开启更新检查' : '已关闭更新检查')
+  },
+})
+
+async function saveUpdateForm(enabled: boolean, message: string): Promise<void> {
+  savingUpdate.value = true
+  try {
+    await saveUpdateSettings({
+      enabled,
+      upstream: updateForm.upstream.trim() || defaultUpstream(),
+      ownRepo: normalizeRepo(updateForm.ownRepo),
+      token: updateForm.token.trim(),
+    })
+    updateForm.ownRepo = normalizeRepo(updateForm.ownRepo)
+    ElMessage.success(message)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    savingUpdate.value = false
+  }
+}
+
+async function saveUpdate(): Promise<void> {
+  await saveUpdateForm(updateSettings.value?.enabled === true, '更新设置已保存')
+}
+
+async function checkNow(): Promise<void> {
+  checkingUpdate.value = true
+  try {
+    const info = await checkForUpdate(updateForm.upstream || defaultUpstream())
+    if (!info) {
+      ElMessage.warning('无法获取上游版本信息，请检查网络后重试')
+      return
+    }
+    if (!info.hasUpdate) {
+      ElMessage.success(`当前已是最新版本 v${info.currentVersion}`)
+      return
+    }
+    showUpdateNotice(info)
+  } finally {
+    checkingUpdate.value = false
+  }
 }
 
 async function testConnection(): Promise<void> {
@@ -316,6 +380,59 @@ async function wipeData(): Promise<void> {
         <template #title>安全说明</template>
         <p>
           收集链接里会携带这个 Token（粉丝浏览器需要它写入仓库），因此请务必使用<strong>专用私有仓库 + 专用 Token</strong>，不要授权到主仓库。提交内容已用各活动的公钥加密，即使 Token 或仓库泄漏，地址也无法被他人读取；活动结束后可以在 GitHub 上直接吊销 Token。
+        </p>
+      </el-alert>
+    </section>
+
+    <section class="panel panel-pad">
+      <h2 class="panel-title">版本更新</h2>
+      <p class="panel-desc">
+        开启后每次解锁会检查上游是否有新版本。配置更新 Token 可以直接一键更新自己的站点。更新只同步代码，不影响本机数据与收集仓库。
+      </p>
+
+      <div class="anti-abuse-row">
+        <div class="setting-info">
+          <span class="setting-label">开启更新检查</span>
+          <span class="setting-desc">关闭后不再请求上游版本信息，仍可手动点「检查更新」。</span>
+        </div>
+        <el-switch v-model="updateEnabled" :loading="savingUpdate" aria-label="开启更新检查" />
+      </div>
+
+      <el-form label-position="top" class="collect-form">
+        <el-form-item label="上游仓库">
+          <el-input v-model="updateForm.upstream" placeholder="Dreamend1ng/vtuber-address-manage" spellcheck="false" />
+        </el-form-item>
+        <el-form-item label="你的站点仓库">
+          <el-input
+            v-model="updateForm.ownRepo"
+            placeholder="你的用户名/仓库名（部署在 GitHub Pages 时会自动识别）"
+            spellcheck="false"
+          />
+        </el-form-item>
+        <el-form-item label="更新 Token（选填）">
+          <el-input v-model="updateForm.token" type="password" show-password placeholder="github_pat_..." spellcheck="false" />
+        </el-form-item>
+      </el-form>
+
+      <div class="collect-actions">
+        <el-button type="primary" :loading="savingUpdate" @click="saveUpdate">保存</el-button>
+        <el-button :loading="checkingUpdate" @click="checkNow">检查更新</el-button>
+        <span class="collect-updated">当前版本 v{{ siteConfig.version }}</span>
+      </div>
+
+      <p class="collect-links">
+        还没有更新 Token？
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">
+          创建 fine-grained Token
+        </a>
+        ：Repository access 只勾选<strong>你自己的站点仓库</strong>（不是收集仓库），权限只需 <strong>Contents: Read and write</strong>。
+      </p>
+
+      <el-alert type="info" :closable="false" class="collect-alert">
+        <template #title>一键更新会做什么</template>
+        <p>
+          对比上游与你的仓库，只同步有变化的代码文件并提交一次，由 GitHub Actions 自动重新部署（约 1 分钟）。
+          <strong>docs/、README、TUTORIAL 不会被同步</strong>；你改过的 <span class="mono">src/config.ts</span>（应用名、主题色）与网站图标会保留。
         </p>
       </el-alert>
     </section>

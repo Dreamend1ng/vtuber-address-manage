@@ -81,6 +81,19 @@ export interface CollectionSettings {
   updatedAt: number
 }
 
+/** 版本更新设置（可选功能，数据存在本机加密保险库中） */
+export interface UpdateSettings {
+  /** 是否开启更新检查 */
+  enabled: boolean
+  /** 上游（模板）仓库，默认指向作者仓库 */
+  upstream: string
+  /** 用户自己的站点仓库，用于一键更新时提交改动 */
+  ownRepo: string
+  /** 只授权站点仓库 Contents 读写的 Token；不填则只能检查与提示 */
+  token: string
+  updatedAt: number
+}
+
 /** 活动自己的密钥对：用于加密粉丝提交，逐个活动独立 */
 export interface EventKeys {
   publicKey: JsonWebKey

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { Address, CollectionEvent, CollectionSettings, RecordType } from '../types/models'
+import type { Address, CollectionEvent, CollectionSettings, RecordType, UpdateSettings } from '../types/models'
 import { decryptJson, encryptJson } from '../crypto/vault'
 import { deleteAsset, deleteRecord, getAllRecords, putRecord } from '../storage/db'
 import { requireDek } from './vault'
@@ -7,9 +7,11 @@ import { requireDek } from './vault'
 export const addresses = ref<Address[]>([])
 export const events = ref<CollectionEvent[]>([])
 export const collectionSettings = ref<CollectionSettings | null>(null)
+export const updateSettings = ref<UpdateSettings | null>(null)
 export const recordsLoading = ref(false)
 
 const COLLECTION_SETTINGS_ID = 'collection'
+const UPDATE_SETTINGS_ID = 'update'
 
 function sortByUpdated<T extends { updatedAt: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => b.updatedAt - a.updatedAt)
@@ -84,6 +86,7 @@ export async function loadRecords(): Promise<void> {
     const nextAddresses: Address[] = []
     const nextEvents: CollectionEvent[] = []
     let nextSettings: CollectionSettings | null = null
+    let nextUpdateSettings: UpdateSettings | null = null
     let adoptedCollection: Omit<CollectionSettings, 'updatedAt'> | null = null
     let skipped = 0
     for (const record of stored) {
@@ -100,6 +103,8 @@ export async function loadRecords(): Promise<void> {
           adoptedCollection ??= migrated.adopted
         } else if (record.type === 'settings' && record.id === COLLECTION_SETTINGS_ID) {
           nextSettings = await decryptJson<CollectionSettings>(requireDek(), record.payload)
+        } else if (record.type === 'settings' && record.id === UPDATE_SETTINGS_ID) {
+          nextUpdateSettings = await decryptJson<UpdateSettings>(requireDek(), record.payload)
         }
       } catch {
         skipped += 1
@@ -108,6 +113,7 @@ export async function loadRecords(): Promise<void> {
     addresses.value = sortByUpdated(nextAddresses)
     events.value = sortByUpdated(nextEvents)
     collectionSettings.value = nextSettings
+    updateSettings.value = nextUpdateSettings
     if (!nextSettings && adoptedCollection) {
       await saveCollectionSettings(adoptedCollection)
     }
@@ -123,6 +129,7 @@ export function clearRecords(): void {
   addresses.value = []
   events.value = []
   collectionSettings.value = null
+  updateSettings.value = null
 }
 
 async function persist<T>(id: string, type: RecordType, value: T & { updatedAt: number }): Promise<void> {
@@ -192,6 +199,13 @@ export async function saveCollectionSettings(
   const settings: CollectionSettings = { ...input, updatedAt: Date.now() }
   await persist(COLLECTION_SETTINGS_ID, 'settings', settings)
   collectionSettings.value = { ...settings }
+}
+
+/** 保存版本更新设置（Token 同样进加密保险库） */
+export async function saveUpdateSettings(input: Omit<UpdateSettings, 'updatedAt'>): Promise<void> {
+  const settings: UpdateSettings = { ...input, updatedAt: Date.now() }
+  await persist(UPDATE_SETTINGS_ID, 'settings', settings)
+  updateSettings.value = { ...settings }
 }
 
 /* ---------- 查询 ---------- */

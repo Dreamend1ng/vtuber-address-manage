@@ -6,7 +6,7 @@ export const siteConfig = {
   /** 应用名，显示在侧边栏、锁屏与备份文件名中 */
   appName: '寄件台',
   /** 版本号 */
-  version: '0.2.0',
+  version: '0.3.0',
   /** 英文标识，用于字标 */
   appNameEn: 'DISPATCH DESK',
   /** 一句话说明 */
