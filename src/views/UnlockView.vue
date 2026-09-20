@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { siteConfig } from '../config'
 import { recoverVault, unlockVault } from '../services/vault'
 import { formatRecoveryCode, isRecoveryCodeComplete } from '../crypto/recovery'

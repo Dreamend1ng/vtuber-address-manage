@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Calendar, FolderOpened, Lock, Odometer, Setting, Van } from '@element-plus/icons-vue'
 import { siteConfig } from '../config'
 import { lockVault } from '../services/vault'

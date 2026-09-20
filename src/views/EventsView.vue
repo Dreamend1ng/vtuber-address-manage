@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Download, Link, Plus, View } from '@element-plus/icons-vue'
 import type { CollectionEvent } from '../types/models'
 import { collectionSettings, eventSubmissions, events, removeEvent } from '../services/records'

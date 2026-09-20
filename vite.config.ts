@@ -1,4 +1,7 @@
 import vue from '@vitejs/plugin-vue'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 
 const CSP = [
@@ -43,7 +46,20 @@ function cspMeta(): Plugin {
 export default defineConfig({
   // 相对路径：无论部署在域名根目录还是 GitHub Pages 的子路径下都能直接工作
   base: './',
-  plugins: [vue(), cspMeta()],
+  plugins: [
+    vue(),
+    // Element Plus 按需引入：模板里的组件与函数式 API（ElMessage 等）自动 import 对应样式
+    AutoImport({
+      resolvers: [ElementPlusResolver()],
+      dts: 'src/auto-imports.d.ts',
+      eslintrc: { enabled: false },
+    }),
+    Components({
+      resolvers: [ElementPlusResolver()],
+      dts: 'src/components.d.ts',
+    }),
+    cspMeta(),
+  ],
   build: {
     target: 'es2022',
     sourcemap: false,

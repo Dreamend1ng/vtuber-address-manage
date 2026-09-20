@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Download, Link, Refresh, Upload, Van } from '@element-plus/icons-vue'
 import type { Address } from '../types/models'
 import { collectionSettings, eventSubmissions, findEvent } from '../services/records'
@@ -28,6 +27,9 @@ import { parseCsv } from '../utils/csv'
 import { parseXlsx } from '../utils/xlsxReader'
 import { readFileInput } from '../utils/image'
 import { formatDateTime } from '../utils/format'
+
+/** el-table 插槽里的 row 类型是 DefaultRow，运行期就是业务对象，这里还原类型 */
+const asAddress = (row: unknown): Address => row as Address
 
 const route = useRoute()
 const router = useRouter()
@@ -330,7 +332,7 @@ function exportXlsx(): void {
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
-            <span class="stamp" :class="`stamp--${addressStatus(row).tone}`">{{ addressStatus(row).label }}</span>
+            <span class="stamp" :class="`stamp--${addressStatus(asAddress(row)).tone}`">{{ addressStatus(asAddress(row)).label }}</span>
           </template>
         </el-table-column>
         <el-table-column label="快递公司" width="110">
@@ -347,13 +349,13 @@ function exportXlsx(): void {
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openTracking(row)">
+            <el-button link type="primary" @click="openTracking(asAddress(row))">
               {{ row.trackingNo ? '改单号' : '填写单号' }}
             </el-button>
-            <el-button v-if="row.trackingNo && !row.shippedAt" link type="success" @click="shipSingle(row)">
+            <el-button v-if="row.trackingNo && !row.shippedAt" link type="success" @click="shipSingle(asAddress(row))">
               发货
             </el-button>
-            <el-button v-if="row.shippedAt" link type="warning" @click="unshipSingle(row)">撤销</el-button>
+            <el-button v-if="row.shippedAt" link type="warning" @click="unshipSingle(asAddress(row))">撤销</el-button>
           </template>
         </el-table-column>
         <template #empty>

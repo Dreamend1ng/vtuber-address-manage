@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Download, Grid, Link, Operation, Plus, Refresh, Upload, View } from '@element-plus/icons-vue'
 import type { Address } from '../types/models'
 import { collectionSettings, eventSubmissions, findEvent, removeAddress, saveEvent } from '../services/records'
@@ -34,6 +33,10 @@ const COLOR_PRESETS = ['#2E4E9E', '#C6473F', '#2F7D5B', '#A9761F', '#7C4DFF', '#
 
 const message = (error: unknown, fallback = '操作失败'): string =>
   error instanceof Error && error.message ? error.message : fallback
+
+/** el-table 插槽里的 row 类型是 DefaultRow，运行期就是业务对象，这里还原类型 */
+const asAddress = (row: unknown): Address => row as Address
+const asDedupeRow = (row: unknown): DedupeRow => row as DedupeRow
 
 /* ---------- 表单设计 ---------- */
 
@@ -681,7 +684,7 @@ const sourceLabel = (item: Address): string =>
             <el-table-column prop="detail" label="收件地址" min-width="240" show-overflow-tooltip />
             <el-table-column label="发货" width="140">
               <template #default="{ row }">
-                <span class="stamp" :class="`stamp--${addressStatus(row).tone}`">{{ addressStatus(row).label }}</span>
+                <span class="stamp" :class="`stamp--${addressStatus(asAddress(row)).tone}`">{{ addressStatus(asAddress(row)).label }}</span>
                 <div v-if="row.trackingNo" class="cell-sub mono">{{ row.trackingNo }}</div>
               </template>
             </el-table-column>
@@ -698,13 +701,13 @@ const sourceLabel = (item: Address): string =>
                     </el-tooltip>
                     <span v-else class="muted">{{ row.deviceInfo || '未知设备' }}</span>
                     <el-tag
-                      v-if="repeatCount(row) > 1"
+                      v-if="repeatCount(asAddress(row)) > 1"
                       size="small"
                       type="warning"
                       effect="plain"
                       class="repeat-tag"
                     >
-                      同设备 ×{{ repeatCount(row) }}
+                      同设备 ×{{ repeatCount(asAddress(row)) }}
                     </el-tag>
                   </div>
                 </template>
@@ -718,13 +721,13 @@ const sourceLabel = (item: Address): string =>
             </el-table-column>
             <el-table-column label="来源" width="80">
               <template #default="{ row }">
-                <el-tag size="small" effect="plain" type="info">{{ sourceLabel(row) }}</el-tag>
+                <el-tag size="small" effect="plain" type="info">{{ sourceLabel(asAddress(row)) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="copySubmission(row)">复制</el-button>
-                <el-button link type="danger" :icon="Delete" @click="confirmRemoveSubmission(row)">删除</el-button>
+                <el-button link type="primary" @click="copySubmission(asAddress(row))">复制</el-button>
+                <el-button link type="danger" :icon="Delete" @click="confirmRemoveSubmission(asAddress(row))">删除</el-button>
               </template>
             </el-table-column>
             <template #empty>
@@ -785,10 +788,10 @@ const sourceLabel = (item: Address): string =>
             </template>
           </el-table-column>
           <el-table-column label="保留" min-width="140">
-            <template #default="{ row }">{{ keepLabel(row) }}</template>
+            <template #default="{ row }">{{ keepLabel(asDedupeRow(row)) }}</template>
           </el-table-column>
           <el-table-column label="合并的单号" min-width="180">
-            <template #default="{ row }">{{ mergeLabel(row) }}</template>
+            <template #default="{ row }">{{ mergeLabel(asDedupeRow(row)) }}</template>
           </el-table-column>
         </el-table>
       </div>

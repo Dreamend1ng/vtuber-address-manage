@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { siteConfig } from '../config'
 import { addresses, collectionSettings, saveCollectionSettings } from '../services/records'
 import { testCollection } from '../services/events'

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { Download, Link, Van } from '@element-plus/icons-vue'
 import type { CollectionEvent } from '../types/models'

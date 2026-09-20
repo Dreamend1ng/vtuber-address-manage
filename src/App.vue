@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { lockVault, touchActivity, vaultState } from './services/vault'
 import { clearRecords, loadRecords } from './services/records'
 
@@ -50,5 +50,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <router-view />
+  <el-config-provider :locale="zhCn">
+    <router-view />
+  </el-config-provider>
 </template>

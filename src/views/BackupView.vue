@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, FolderOpened } from '@element-plus/icons-vue'
 import { siteConfig } from '../config'
 import { buildBackup, mergeBackup, parseBackup, restoreBackup, type BackupFile } from '../services/backup'
