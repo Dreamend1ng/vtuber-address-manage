@@ -1,4 +1,4 @@
-import { encodeUrlPayload, utf8Decode, utf8Encode } from '../crypto/encoding'
+import { encodeUrlPayload, utf8Decode, utf8Encode, type Bytes } from '../crypto/encoding'
 import { decryptEnvelope, generateEventKeyPair, type EnvelopeFile } from '../crypto/envelope'
 import { siteConfig } from '../config'
 import type {
@@ -110,6 +110,7 @@ export async function publishEvent(event: CollectionEvent): Promise<void> {
     publicKey: event.keys.publicKey,
     hasBackground: event.backgroundAssetId !== null,
     collectMeta: collectionSettings.value?.recordAntiAbuse !== false,
+    customFields: event.customFields ?? [],
     updatedAt: new Date().toISOString(),
   }
   await putFileEnsuring(
@@ -137,9 +138,40 @@ export interface SyncResult {
   added: number
   skipped: number
   failed: number
+  /** 文件名或结构不符合提交格式的无效文件（已记录，不会重复处理） */
+  invalid: number
+  /** 本次达到单次上限，还有待同步文件 */
+  hasMore: boolean
 }
 
 type ProgressCallback = (done: number, total: number) => void
+
+/** 单次同步最多处理的文件数，避免大量积压把浏览器卡住 */
+const MAX_FILES_PER_SYNC = 300
+/** 表单页生成的文件名：毫秒时间戳 + 8 位随机 hex */
+const SUBMISSION_NAME_RE = /^\d{10,20}-[0-9a-f]{8}\.json$/
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/
+
+/** 校验提交文件：文件名格式、体积上限、信封结构与 base64 字段 */
+function isValidSubmissionFile(fileName: string, bytes: Bytes): boolean {
+  if (!SUBMISSION_NAME_RE.test(fileName)) return false
+  if (bytes.length === 0 || bytes.length > 8 * 1024) return false
+  try {
+    const parsed = JSON.parse(utf8Decode(bytes)) as Partial<EnvelopeFile>
+    return (
+      parsed?.v === 1 &&
+      parsed.alg === 'RSA-OAEP-256+A256GCM' &&
+      typeof parsed.wrapped === 'string' &&
+      BASE64_RE.test(parsed.wrapped) &&
+      typeof parsed.iv === 'string' &&
+      BASE64_RE.test(parsed.iv) &&
+      typeof parsed.data === 'string' &&
+      BASE64_RE.test(parsed.data)
+    )
+  } catch {
+    return false
+  }
+}
 
 /** 从收集仓库同步粉丝提交：只处理未导入过的文件 */
 export async function syncEventSubmissions(
@@ -150,12 +182,26 @@ export async function syncEventSubmissions(
   await assertRemoteConfigMatches(event, target)
   const entries = await listDirectory(target, `events/${event.formKey}/submissions`)
   const seen = new Set(event.importedRemotePaths)
-  const pending = entries.filter((entry) => !seen.has(entry.path))
-  const result: SyncResult = { added: 0, skipped: 0, failed: 0 }
+  const pendingAll = entries.filter((entry) => !seen.has(entry.path))
+  const pending = pendingAll.slice(0, MAX_FILES_PER_SYNC)
+  const result: SyncResult = {
+    added: 0,
+    skipped: 0,
+    failed: 0,
+    invalid: 0,
+    hasMore: pendingAll.length > pending.length,
+  }
 
   for (let index = 0; index < pending.length; index += 1) {
     const entry = pending[index]
     onProgress?.(index + 1, pending.length)
+    const fileName = entry.path.split('/').pop() ?? ''
+    if (!SUBMISSION_NAME_RE.test(fileName)) {
+      // 持有链接的人可以绕过表单页直接往仓库写文件，文件名不符的一律视为无效提交
+      event.importedRemotePaths.push(entry.path)
+      result.invalid += 1
+      continue
+    }
     let file
     try {
       file = await getFile(target, entry.path)
@@ -171,9 +217,20 @@ export async function syncEventSubmissions(
       result.skipped += 1
       continue
     }
+    if (!isValidSubmissionFile(fileName, file.bytes)) {
+      event.importedRemotePaths.push(entry.path)
+      result.invalid += 1
+      continue
+    }
     try {
       const envelope = JSON.parse(utf8Decode(file.bytes)) as EnvelopeFile
       const payload = await decryptEnvelope<SubmissionPayload>(event.keys.privateKey, envelope)
+      const extra: Record<string, string> = {}
+      if (payload.extra && typeof payload.extra === 'object') {
+        for (const [key, value] of Object.entries(payload.extra)) {
+          if (typeof value === 'string' && value.trim() !== '') extra[key] = value.trim()
+        }
+      }
       await createAddress({
         name: (payload.recipientName ?? '').trim(),
         phone: (payload.phone ?? '').trim(),
@@ -197,6 +254,7 @@ export async function syncEventSubmissions(
         deviceId: payload.fingerprint,
         deviceInfo: payload.device,
         userAgent: payload.ua,
+        extra: Object.keys(extra).length > 0 ? extra : undefined,
       })
       event.importedRemotePaths.push(entry.path)
       result.added += 1
@@ -365,13 +423,17 @@ export function previewUrlFor(event: CollectionEvent): string {
 /* ---------- 导出 ---------- */
 
 export function exportEventSubmissionsXlsx(event: CollectionEvent, list: Address[]): void {
-  const rows: (string | number)[][] = [['抖音ID', '收件名', '手机号', '收件地址', '快递单号', '提交时间']]
+  const customFields = event.customFields ?? []
+  const rows: (string | number)[][] = [
+    ['抖音ID', '收件名', '手机号', '收件地址', ...customFields.map((field) => field.label), '快递单号', '提交时间'],
+  ]
   for (const address of list) {
     rows.push([
       address.douyinId ?? '',
       address.name,
       address.phone,
       [address.province, address.city, address.district, address.detail].filter(Boolean).join(''),
+      ...customFields.map((field) => address.extra?.[field.id] ?? ''),
       address.trackingNo ?? '',
       address.submittedAt ? new Date(address.submittedAt).toLocaleString('zh-CN') : '',
     ])
@@ -383,7 +445,7 @@ export function exportEventSubmissionsXlsx(event: CollectionEvent, list: Address
 /** 手动补录时把活动信息带入地址记录 */
 export async function addManualSubmission(
   event: CollectionEvent,
-  input: { douyinId: string; recipientName: string; phone: string; address: string },
+  input: { douyinId: string; recipientName: string; phone: string; address: string; extra?: Record<string, string> },
 ): Promise<void> {
   await createAddress({
     name: input.recipientName,
@@ -399,5 +461,6 @@ export async function addManualSubmission(
     eventId: event.id,
     douyinId: input.douyinId,
     submittedAt: Date.now(),
+    extra: input.extra && Object.keys(input.extra).length > 0 ? input.extra : undefined,
   })
 }

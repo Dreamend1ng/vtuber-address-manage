@@ -97,6 +97,10 @@
 
 ![表单设计与粉丝端实时预览](docs/tutorial/event-form-design.png)
 
+需要粉丝选择周边款式、尺码或填写备注时，在同一页下方的「**自定义字段**」里添加：可选文本或单选两种类型，设置好选项后记得重新发布。粉丝端会按设置渲染，导出 Excel 时也会带上这些列：
+
+![自定义字段](docs/screenshots/custom-field.png)
+
 点右上角「**发布 / 更新表单**」，表单配置（含活动公钥）就会写入你的专用仓库，状态里会显示「上次发布」的时间：
 
 ![发布成功](docs/tutorial/event-published.png)

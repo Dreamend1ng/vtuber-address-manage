@@ -177,8 +177,36 @@ export interface RemoteEntry {
   type: string
 }
 
-/** 列出目录下的文件；目录不存在返回空数组 */
+/**
+ * 列出目录下的文件。
+ * 优先用 Git Trees API：一次请求拿到整个分支的文件树（已导入的文件名过滤在本地做），
+ * 仅在返回 truncated（仓库过大）时回退到 Contents API 逐层列目录。
+ */
 export async function listDirectory(target: GithubTarget, path: string): Promise<RemoteEntry[]> {
+  const repo = repoPath(target)
+  const response = await safeFetch(
+    `${API_BASE}/repos/${repo}/git/trees/${encodeURIComponent(target.branch)}?recursive=1`,
+    { headers: requestHeaders(target.token) },
+  )
+  if (response.status === 404) return []
+  if (!response.ok) throw new GithubError(await describeFailure(response), response.status)
+  const body = await readJson<{ tree?: { path: string; type: string; sha: string }[]; truncated?: boolean }>(response)
+  if (body.truncated || !Array.isArray(body.tree)) {
+    return listDirectoryViaContents(target, path)
+  }
+  const prefix = `${path.replace(/\/+$/, '')}/`
+  return body.tree
+    .filter(
+      (entry) =>
+        entry.type === 'blob' &&
+        entry.path.startsWith(prefix) &&
+        !entry.path.slice(prefix.length).includes('/'),
+    )
+    .map((entry) => ({ name: entry.path.slice(prefix.length), path: entry.path, sha: entry.sha, type: 'file' }))
+}
+
+/** 回退实现：Contents API 只返回当前目录的一层元数据 */
+async function listDirectoryViaContents(target: GithubTarget, path: string): Promise<RemoteEntry[]> {
   const response = await safeFetch(
     `${API_BASE}/repos/${repoPath(target)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(target.branch)}`,
     { headers: requestHeaders(target.token) },

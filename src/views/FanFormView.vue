@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { decodeUrlPayload, utf8Encode } from '../crypto/encoding'
@@ -73,6 +73,8 @@ watch(
 )
 
 const errors = reactive<Record<string, string>>({})
+/** 自定义字段的填写内容，键为字段 id */
+const extraValues = reactive<Record<string, string>>({})
 
 const themeStyle = computed(() => ({
   '--fan-theme': config.value?.themeColor ?? '#2e4e9e',
@@ -103,6 +105,11 @@ function validate(): boolean {
   if (phone === '') errors.phone = '请填写手机号'
   else if (!/^[\d+\-\s()]{6,20}$/.test(phone)) errors.phone = '手机号格式看起来不对'
   if (form.address.trim().length < 5) errors.address = '请填写完整的收件地址'
+  for (const field of config.value?.customFields ?? []) {
+    if (field.required && (extraValues[field.id] ?? '').trim() === '') {
+      errors[`extra:${field.id}`] = `请填写${field.label}`
+    }
+  }
   if (!form.consent) errors.consent = '请先同意信息用于本次活动寄送'
   return Object.keys(errors).length === 0
 }
@@ -205,6 +212,12 @@ async function submit(): Promise<void> {
       address: form.address.trim(),
       consentAt: Date.now(),
     }
+    const extra: Record<string, string> = {}
+    for (const field of config.value?.customFields ?? []) {
+      const value = (extraValues[field.id] ?? '').trim()
+      if (value !== '') extra[field.id] = value
+    }
+    if (Object.keys(extra).length > 0) payload.extra = extra
     if (config.value.collectMeta) {
       prepareDeviceInfo()
       const info = deviceInfo.value ?? collectDeviceInfo()
@@ -252,6 +265,7 @@ function resetForm(): void {
   form.phone = ''
   form.address = ''
   form.consent = false
+  for (const key of Object.keys(extraValues)) delete extraValues[key]
   for (const key of Object.keys(errors)) delete errors[key]
   errorMessage.value = ''
   phase.value = 'ready'
@@ -260,7 +274,7 @@ function resetForm(): void {
 
 <template>
   <div class="fan-screen" :style="[themeStyle, backdropStyle]">
-    <div class="fan-shell">
+    <main class="fan-shell">
       <!-- 加载中 -->
       <div v-if="phase === 'loading'" class="fan-card fan-card--plain">
         <p class="fan-loading">正在打开表单…</p>
@@ -352,6 +366,26 @@ function resetForm(): void {
           <span v-if="errors.address" class="fan-field-error">{{ errors.address }}</span>
         </label>
 
+        <!-- 活动自定义字段 -->
+        <label v-for="field in config?.customFields ?? []" :key="field.id" class="fan-field">
+          <span class="fan-label">
+            {{ field.label }} <em v-if="field.required">必填</em>
+          </span>
+          <select v-if="field.type === 'select'" v-model="extraValues[field.id]" class="fan-input">
+            <option value="">请选择</option>
+            <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
+          </select>
+          <input
+            v-else
+            v-model="extraValues[field.id]"
+            class="fan-input"
+            type="text"
+            :placeholder="`请填写${field.label}`"
+            maxlength="60"
+          />
+          <span v-if="errors[`extra:${field.id}`]" class="fan-field-error">{{ errors[`extra:${field.id}`] }}</span>
+        </label>
+
         <label class="fan-consent">
           <input v-model="form.consent" type="checkbox" class="fan-checkbox" />
           <span v-if="config?.collectMeta">
@@ -381,7 +415,7 @@ function resetForm(): void {
           <a class="fan-track-link" :href="trackUrl">已填写过？查询我的快递单号</a>
         </p>
       </form>
-    </div>
+    </main>
   </div>
 </template>
 
@@ -443,7 +477,7 @@ function resetForm(): void {
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  color: #8a93a6;
+  color: #5f6b7d;
   display: block;
   margin-bottom: 6px;
 }
@@ -584,7 +618,7 @@ function resetForm(): void {
 .fan-foot {
   margin: 12px 0 0;
   text-align: center;
-  color: #8a93a6;
+  color: #5f6b7d;
   font-size: 11.5px;
 }
 

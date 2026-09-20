@@ -177,10 +177,24 @@ function downloadNewCode(): void {
 
 /* ---------- 偏好设置 ---------- */
 const autoLock = computed({
-  get: () => vaultState.autoLockMinutes,
-  set: (value: number) => {
-    updatePrefs({ autoLockMinutes: value })
-    ElMessage.success(value === 0 ? '已关闭自动锁定' : `已设为 ${value} 分钟无操作后自动锁定`)
+  get: () => {
+    if (vaultState.autoLockMode === 'interval') return 'interval'
+    return vaultState.autoLockMinutes === 0 ? 'never' : `idle:${vaultState.autoLockMinutes}`
+  },
+  set: (value: string) => {
+    if (value === 'interval') {
+      updatePrefs({ autoLockMode: 'interval' })
+      ElMessage.success('已设为每 30 分钟检查一次：检查时刻前 1 分钟内有操作就不锁定')
+      return
+    }
+    if (value === 'never') {
+      updatePrefs({ autoLockMode: 'idle', autoLockMinutes: 0 })
+      ElMessage.success('已关闭自动锁定')
+      return
+    }
+    const minutes = Number(value.split(':')[1] ?? 15)
+    updatePrefs({ autoLockMode: 'idle', autoLockMinutes: minutes })
+    ElMessage.success(`已设为 ${minutes} 分钟无操作后自动锁定`)
   },
 })
 
@@ -193,12 +207,13 @@ const clipboardClear = computed({
 })
 
 const autoLockOptions = [
-  { label: '1 分钟', value: 1 },
-  { label: '5 分钟', value: 5 },
-  { label: '15 分钟', value: 15 },
-  { label: '30 分钟', value: 30 },
-  { label: '60 分钟', value: 60 },
-  { label: '永不自动锁定', value: 0 },
+  { label: '1 分钟无操作', value: 'idle:1' },
+  { label: '5 分钟无操作', value: 'idle:5' },
+  { label: '15 分钟无操作', value: 'idle:15' },
+  { label: '30 分钟无操作', value: 'idle:30' },
+  { label: '60 分钟无操作', value: 'idle:60' },
+  { label: '每 30 分钟检查一次', value: 'interval' },
+  { label: '永不自动锁定', value: 'never' },
 ]
 
 const clipboardOptions = [
@@ -294,7 +309,7 @@ async function wipeData(): Promise<void> {
             修改后需要回到活动里重新「发布表单」才会生效。
           </span>
         </div>
-        <el-switch v-model="antiAbuse" :disabled="!collectionSettings" />
+        <el-switch v-model="antiAbuse" :disabled="!collectionSettings" aria-label="记录提交者 IP 与设备信息" />
       </div>
 
       <el-alert type="warning" :closable="false" class="collect-alert">
@@ -327,9 +342,11 @@ async function wipeData(): Promise<void> {
       <div class="setting-row">
         <div class="setting-info">
           <span class="setting-label">自动锁定</span>
-          <span class="setting-desc">无操作超过设定时长后，数据密钥会从内存中清除。</span>
+          <span class="setting-desc">
+            默认按无操作时长锁定；「每 30 分钟检查一次」指检查时刻前 1 分钟内有操作就不锁定，最长 30 分钟才锁一次。
+          </span>
         </div>
-        <el-select v-model="autoLock" style="width: 170px">
+        <el-select v-model="autoLock" style="width: 210px" aria-label="自动锁定">
           <el-option v-for="option in autoLockOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </div>
@@ -339,7 +356,7 @@ async function wipeData(): Promise<void> {
           <span class="setting-label">剪贴板自动清除</span>
           <span class="setting-desc">复制地址后在设定时间内自动清空剪贴板内容。</span>
         </div>
-        <el-select v-model="clipboardClear" style="width: 170px">
+        <el-select v-model="clipboardClear" style="width: 210px" aria-label="剪贴板自动清除">
           <el-option v-for="option in clipboardOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </div>

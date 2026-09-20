@@ -1,10 +1,12 @@
 /* ---------- 设计变量 ---------- */
-:root {
+/* 用 html:root 提升权重：Element Plus 会在之后注入自己的 :root 变量，权重相同时会覆盖我们 */
+html:root {
   color-scheme: light;
 
   --ink: #1b2a46;
   --ink-soft: #3c4c6b;
-  --muted: #66758f;
+  /* 对比度按 WCAG AA 调整：在 --paper / --surface 上都达到 4.5:1 以上 */
+  --muted: #5a6a85;
   --paper: #f3f5fa;
   --surface: #ffffff;
   --line: #e2e7f0;
@@ -30,12 +32,19 @@
   --el-color-primary-light-9: #eaedf5;
   --el-color-primary-dark-2: #253e7e;
   --el-color-success: #2f7d5b;
-  --el-color-warning: #a9761f;
-  --el-color-danger: #b84a42;
+  --el-color-warning: #8a5d12;
+  /* 危险色加深：danger 描边按钮的文字要满足 4.5:1 对比度 */
+  --el-color-danger: #9e3b33;
+  /* info 色用于字数统计、来源标签等，默认浅灰对比度不足 */
+  --el-color-info: #667085;
   --el-border-radius-base: 6px;
   --el-font-family: var(--font-sans);
   --el-text-color-primary: var(--ink);
   --el-text-color-regular: var(--ink-soft);
+  /* 占位符同样要满足对比度，默认的浅灰只有 2.3:1 */
+  --el-text-color-placeholder: #667085;
+  /* 次级文字（字数统计等）同样加深 */
+  --el-text-color-secondary: #667085;
   --el-border-color: var(--line);
   --el-border-color-light: var(--line);
   --el-border-color-lighter: var(--line);
@@ -238,6 +247,17 @@ a {
 }
 
 /* ---------- Element Plus 细节调整 ---------- */
+/* 提示框文字用正文色：提高权重覆盖 Element Plus 自带的浅色文字 */
+.el-alert.is-light .el-alert__title {
+  color: var(--ink);
+}
+
+.el-alert.is-light .el-alert__description,
+.el-alert.is-light .el-alert__description p,
+.el-alert.is-light .el-alert__description strong {
+  color: var(--ink-soft);
+}
+
 .el-table {
   --el-table-border-color: var(--line);
   --el-table-header-bg-color: #f8fafd;

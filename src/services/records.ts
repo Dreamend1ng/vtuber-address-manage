@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import type { Address, CollectionEvent, CollectionSettings, RecordType } from '../types/models'
 import { decryptJson, encryptJson } from '../crypto/vault'
-import { deleteRecord, getAllRecords, putRecord } from '../storage/db'
+import { deleteAsset, deleteRecord, getAllRecords, putRecord } from '../storage/db'
 import { requireDek } from './vault'
 
 export const addresses = ref<Address[]>([])
@@ -69,6 +69,7 @@ function migrateEvent(raw: unknown): {
       lastSyncedAt: legacy.lastSyncedAt ?? legacy.collection?.lastSyncedAt ?? null,
       trackingSalt: legacy.trackingSalt,
       lastTrackingPublishedAt: legacy.lastTrackingPublishedAt ?? null,
+      customFields: legacy.customFields ?? [],
       importedRemotePaths: legacy.importedRemotePaths ?? [],
     },
     adopted,
@@ -168,10 +169,14 @@ export async function saveEvent(event: CollectionEvent): Promise<void> {
   events.value = upsert(events.value, { ...event })
 }
 
-/** 删除活动：收集到的地址会被保留，但解除与该活动的关联 */
+/** 删除活动：收集到的地址会被保留（解除关联），表单背景图一并清理 */
 export async function removeEvent(id: string): Promise<void> {
+  const event = events.value.find((item) => item.id === id)
   await deleteRecord(id)
-  events.value = events.value.filter((event) => event.id !== id)
+  events.value = events.value.filter((item) => item.id !== id)
+  if (event?.backgroundAssetId) {
+    await deleteAsset(event.backgroundAssetId)
+  }
   for (const address of addresses.value.filter((entry) => entry.eventId === id)) {
     const next: Address = { ...address, eventId: null }
     await persist(next.id, 'address', next)

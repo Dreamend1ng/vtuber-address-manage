@@ -128,7 +128,7 @@ function skipRepo(): void {
 
 <template>
   <div class="auth-screen">
-    <div>
+    <main>
       <div class="auth-card">
         <div class="airmail-stripe" />
         <div class="auth-card__body">
@@ -303,7 +303,7 @@ function skipRepo(): void {
       <p class="auth-footer">
         所有数据仅加密保存在本机浏览器 · 不会上传到任何服务器
       </p>
-    </div>
+    </main>
   </div>
 </template>
 

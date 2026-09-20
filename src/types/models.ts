@@ -54,9 +54,22 @@ export interface Address extends BaseRecord {
   carrier?: string
   /** 发货时间；为空表示尚未发货 */
   shippedAt?: number | null
+  /** 活动自定义字段的填写内容，键为字段 id */
+  extra?: Record<string, string>
 }
 
 export type EventStatus = 'collecting' | 'closed'
+
+/** 活动自定义表单字段：在固定的四项之外，由主播按需添加 */
+export interface CustomField {
+  id: string
+  /** 显示在表单上的字段名，如「款式」「尺码」 */
+  label: string
+  type: 'text' | 'select'
+  /** type 为 select 时的可选项 */
+  options: string[]
+  required: boolean
+}
 
 /** 全局收集设置：所有活动共用同一个 GitHub 收集仓库 */
 export interface CollectionSettings {
@@ -97,6 +110,8 @@ export interface CollectionEvent extends BaseRecord {
   trackingSalt?: string
   /** 上次发布快递单号查询数据的时间 */
   lastTrackingPublishedAt?: number | null
+  /** 自定义表单字段（默认空数组，即只有固定四项） */
+  customFields?: CustomField[]
   /** 已同步过的云端文件路径 */
   importedRemotePaths: string[]
 }
@@ -112,6 +127,8 @@ export interface FanFormConfig {
   hasBackground: boolean
   /** 是否采集 IP / 设备指纹 / UA（用于防捣乱溯源） */
   collectMeta: boolean
+  /** 自定义表单字段（粉丝端渲染用） */
+  customFields?: CustomField[]
   updatedAt: string
 }
 
@@ -131,5 +148,7 @@ export interface FanFormConfig {
   device?: string
   /** 原始 User-Agent */
   ua?: string
+  /** 自定义字段的填写内容，键为字段 id */
+  extra?: Record<string, string>
 }
 

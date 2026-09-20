@@ -68,7 +68,7 @@ async function recover(): Promise<void> {
 
 <template>
   <div class="auth-screen">
-    <div>
+    <main>
       <div class="auth-card">
         <div class="airmail-stripe" />
         <div class="auth-card__body">
@@ -159,7 +159,7 @@ async function recover(): Promise<void> {
         </div>
       </div>
       <p class="auth-footer">主密码不会被保存，只在本机参与密钥计算</p>
-    </div>
+    </main>
   </div>
 </template>
 

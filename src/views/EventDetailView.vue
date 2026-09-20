@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Delete, Download, Grid, Link, Operation, Plus, Refresh, Upload, View } from '@element-plus/icons-vue'
-import type { Address } from '../types/models'
+import type { Address, CustomField } from '../types/models'
 import { collectionSettings, eventSubmissions, findEvent, removeAddress, saveEvent } from '../services/records'
 import {
   addManualSubmission,
@@ -294,10 +294,15 @@ async function syncNow(): Promise<void> {
     const result = await syncEventSubmissions(value, (done, total) => {
       syncProgress.value = `${done} / ${total}`
     })
-    if (result.added === 0 && result.failed === 0) {
+    if (result.added === 0 && result.failed === 0 && result.invalid === 0 && !result.hasMore) {
       ElMessage.success('没有新的提交')
     } else {
-      ElMessage.success(`同步完成：新增 ${result.added} 条，失败 ${result.failed} 条，跳过 ${result.skipped} 条`)
+      const parts = [`新增 ${result.added} 条`]
+      if (result.failed > 0) parts.push(`解密失败 ${result.failed} 条`)
+      if (result.invalid > 0) parts.push(`无效提交 ${result.invalid} 条`)
+      if (result.skipped > 0) parts.push(`跳过 ${result.skipped} 条`)
+      if (result.hasMore) parts.push('还有更多，请再点一次同步')
+      ElMessage.success(`同步完成：${parts.join('，')}`)
     }
   } catch (error) {
     ElMessage.error(message(error, '同步失败'))
@@ -398,11 +403,136 @@ async function confirmDedupe(): Promise<void> {
   }
 }
 
+/* ---------- 自定义字段 ---------- */
+
+const fieldDialog = ref(false)
+const fieldSaving = ref(false)
+const fieldForm = reactive<{
+  id: string | null
+  label: string
+  type: 'text' | 'select'
+  options: string[]
+  required: boolean
+}>({ id: null, label: '', type: 'text', options: [], required: false })
+
+function openFieldDialog(field?: CustomField): void {
+  Object.assign(
+    fieldForm,
+    field
+      ? { id: field.id, label: field.label, type: field.type, options: [...field.options], required: field.required }
+      : { id: null, label: '', type: 'text', options: [], required: false },
+  )
+  fieldDialog.value = true
+}
+
+async function saveField(): Promise<void> {
+  const value = event.value
+  if (!value) return
+  const label = fieldForm.label.trim()
+  if (label === '') {
+    ElMessage.warning('请填写字段名称')
+    return
+  }
+  if (fieldForm.type === 'select' && fieldForm.options.length === 0) {
+    ElMessage.warning('单选字段至少要有一个选项')
+    return
+  }
+  fieldSaving.value = true
+  try {
+    const nextField: CustomField = {
+      id: fieldForm.id ?? crypto.randomUUID(),
+      label,
+      type: fieldForm.type,
+      options: fieldForm.type === 'select' ? fieldForm.options.map((option) => option.trim()).filter(Boolean) : [],
+      required: fieldForm.required,
+    }
+    const fields = value.customFields ?? []
+    value.customFields = fieldForm.id
+      ? fields.map((item) => (item.id === fieldForm.id ? nextField : item))
+      : [...fields, nextField]
+    await saveEvent(value)
+    fieldDialog.value = false
+    ElMessage.success('字段已保存，修改后请重新「发布 / 更新表单」')
+  } finally {
+    fieldSaving.value = false
+  }
+}
+
+async function removeField(field: CustomField): Promise<void> {
+  const value = event.value
+  if (!value) return
+  try {
+    await ElMessageBox.confirm(`将删除字段「${field.label}」，已收集的地址数据不会被改动。`, '删除字段', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger',
+    })
+  } catch {
+    return
+  }
+  value.customFields = (value.customFields ?? []).filter((item) => item.id !== field.id)
+  await saveEvent(value)
+  ElMessage.success('字段已删除，请重新发布表单')
+}
+
+function fieldTypeLabel(field: CustomField): string {
+  return field.type === 'select' ? `单选：${field.options.join(' / ')}` : '文本'
+}
+
+/* ---------- 批量删除提交 ---------- */
+
+const selectedSubmissions = ref<Address[]>([])
+
+function onSelectionChange(rows: unknown[]): void {
+  selectedSubmissions.value = rows.map(asAddress)
+}
+
+async function confirmRemoveSelected(): Promise<void> {
+  const list = selectedSubmissions.value
+  if (list.length === 0) return
+  try {
+    await ElMessageBox.confirm(`将删除选中的 ${list.length} 条地址，删除后无法恢复。`, '批量删除', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger',
+    })
+  } catch {
+    return
+  }
+  for (const item of list) {
+    await removeAddress(item.id)
+  }
+  selectedSubmissions.value = []
+  ElMessage.success(`已删除 ${list.length} 条地址`)
+}
+
+/** 自定义字段在表格里的展示文本 */
+function extraText(item: Address): string {
+  const entries = Object.entries(item.extra ?? {})
+  if (entries.length === 0) return '—'
+  const fields = event.value?.customFields ?? []
+  return entries
+    .map(([key, value]) => `${fields.find((field) => field.id === key)?.label ?? key}：${value}`)
+    .join('，')
+}
+
 /* ---------- 手动补录 ---------- */
 
 const manualDialog = ref(false)
 const manualSaving = ref(false)
 const manual = reactive({ douyinId: '', recipientName: '', phone: '', address: '' })
+const manualExtra = reactive<Record<string, string>>({})
+
+function openManual(): void {
+  manual.douyinId = ''
+  manual.recipientName = ''
+  manual.phone = ''
+  manual.address = ''
+  for (const key of Object.keys(manualExtra)) delete manualExtra[key]
+  manualDialog.value = true
+}
 
 async function submitManual(): Promise<void> {
   const value = event.value
@@ -413,11 +543,17 @@ async function submitManual(): Promise<void> {
   }
   manualSaving.value = true
   try {
+    const extra: Record<string, string> = {}
+    for (const field of value.customFields ?? []) {
+      const input = (manualExtra[field.id] ?? '').trim()
+      if (input !== '') extra[field.id] = input
+    }
     await addManualSubmission(value, {
       douyinId: manual.douyinId.trim(),
       recipientName: manual.recipientName.trim(),
       phone: manual.phone.trim(),
       address: manual.address.trim(),
+      extra,
     })
     manualDialog.value = false
     manual.douyinId = ''
@@ -528,11 +664,34 @@ const sourceLabel = (item: Address): string =>
               </el-form-item>
             </el-form>
             <p class="field-hint">修改会自动保存；发布后粉丝端立即生效。</p>
+
+            <div class="field-section">
+              <div class="field-section__head">
+                <h3 class="field-section__title">自定义字段</h3>
+                <el-button size="small" :icon="Plus" @click="openFieldDialog()">添加字段</el-button>
+              </div>
+              <p class="field-hint">
+                固定字段是抖音号、收件名、手机号、收件地址。需要粉丝选择款式、尺码或填写备注时在这里添加，修改后要重新「发布 / 更新表单」。
+              </p>
+              <ul v-if="(event.customFields ?? []).length > 0" class="field-list">
+                <li v-for="field in event.customFields ?? []" :key="field.id" class="field-item">
+                  <div class="field-item__main">
+                    <span class="field-item__label">{{ field.label }}</span>
+                    <span class="field-item__meta">{{ fieldTypeLabel(field) }}{{ field.required ? ' · 必填' : '' }}</span>
+                  </div>
+                  <div class="field-item__actions">
+                    <el-button link type="primary" @click="openFieldDialog(field)">编辑</el-button>
+                    <el-button link type="danger" @click="removeField(field)">删除</el-button>
+                  </div>
+                </li>
+              </ul>
+              <p v-else class="field-hint">还没有自定义字段。</p>
+            </div>
           </section>
 
           <section class="preview-panel">
             <h2 class="panel-title">粉丝端预览</h2>
-            <div class="fan-preview" :style="previewStyle">
+            <div class="fan-preview" :style="previewStyle" aria-hidden="true">
               <div class="fan-preview__card">
                 <span class="fan-preview__eyebrow">收件信息收集</span>
                 <h3 class="fan-preview__title">{{ design.name || '未命名活动' }}</h3>
@@ -545,7 +704,7 @@ const sourceLabel = (item: Address): string =>
               </div>
             </div>
             <div class="link-row">
-              <el-input :model-value="shareLink" readonly placeholder="配置收集仓库后生成链接" />
+              <el-input :model-value="shareLink" readonly placeholder="配置收集仓库后生成链接" aria-label="收集链接" />
               <el-button :icon="Link" :disabled="!shareLink" @click="copyShare">复制</el-button>
               <el-dropdown trigger="click" :disabled="!shareLink" @command="openQrMaker">
                 <el-button :icon="Grid" :disabled="!shareLink">制作二维码</el-button>
@@ -648,14 +807,24 @@ const sourceLabel = (item: Address): string =>
             <template v-if="syncProgress">&nbsp;{{ syncProgress }}</template>
           </el-button>
           <el-button :icon="Download" @click="exportSubmissions">导出 Excel</el-button>
-          <el-button :icon="Plus" @click="manualDialog = true">手动补录</el-button>
+          <el-button :icon="Plus" @click="openManual">手动补录</el-button>
           <el-button :icon="Operation" :disabled="duplicateCount === 0" @click="openDedupe">
             {{ dedupeLabel }}
+          </el-button>
+          <el-button
+            type="danger"
+            plain
+            :icon="Delete"
+            :disabled="selectedSubmissions.length === 0"
+            @click="confirmRemoveSelected"
+          >
+            删除选中{{ selectedSubmissions.length > 0 ? `（${selectedSubmissions.length}）` : '' }}
           </el-button>
           <el-input
             v-model="keyword"
             class="search-input"
             placeholder="搜索抖音号 / 姓名 / 手机号"
+            aria-label="搜索提交"
             clearable
           />
         </div>
@@ -668,7 +837,8 @@ const sourceLabel = (item: Address): string =>
         </el-alert>
 
         <section class="panel">
-          <el-table :data="filteredSubmissions" style="width: 100%" row-key="id">
+          <el-table :data="filteredSubmissions" style="width: 100%" row-key="id" @selection-change="onSelectionChange">
+            <el-table-column type="selection" width="46" />
             <el-table-column label="抖音号" min-width="130">
               <template #default="{ row }">
                 <span v-if="row.douyinId" class="mono">{{ row.douyinId }}</span>
@@ -682,6 +852,11 @@ const sourceLabel = (item: Address): string =>
               </template>
             </el-table-column>
             <el-table-column prop="detail" label="收件地址" min-width="240" show-overflow-tooltip />
+            <el-table-column label="自定义信息" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span :class="row.extra ? '' : 'muted'">{{ extraText(asAddress(row)) }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="发货" width="140">
               <template #default="{ row }">
                 <span class="stamp" :class="`stamp--${addressStatus(asAddress(row)).tone}`">{{ addressStatus(asAddress(row)).label }}</span>
@@ -744,6 +919,40 @@ const sourceLabel = (item: Address): string =>
       </el-tab-pane>
     </el-tabs>
 
+    <!-- 自定义字段 -->
+    <el-dialog v-model="fieldDialog" :title="fieldForm.id ? '编辑字段' : '添加字段'" width="520px">
+      <el-form label-position="top">
+        <el-form-item label="字段名称">
+          <el-input v-model="fieldForm.label" placeholder="例如：款式 / 尺码 / 备注" maxlength="20" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-radio-group v-model="fieldForm.type">
+            <el-radio-button value="text">文本</el-radio-button>
+            <el-radio-button value="select">单选</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="fieldForm.type === 'select'" label="选项">
+          <el-select
+            v-model="fieldForm.options"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            :reserve-keyword="false"
+            placeholder="输入后回车添加选项"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="是否必填">
+          <el-switch v-model="fieldForm.required" aria-label="是否必填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fieldDialog = false">取消</el-button>
+        <el-button type="primary" :loading="fieldSaving" @click="saveField">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 手动补录 -->
     <el-dialog v-model="manualDialog" title="手动补录地址" width="520px">
       <el-form label-position="top">
@@ -758,6 +967,16 @@ const sourceLabel = (item: Address): string =>
         </el-form-item>
         <el-form-item label="收件地址">
           <el-input v-model="manual.address" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" maxlength="200" />
+        </el-form-item>
+        <el-form-item
+          v-for="field in event.customFields ?? []"
+          :key="field.id"
+          :label="field.required ? `${field.label}（必填）` : field.label"
+        >
+          <el-select v-if="field.type === 'select'" v-model="manualExtra[field.id]" clearable style="width: 100%">
+            <el-option v-for="option in field.options" :key="option" :label="option" :value="option" />
+          </el-select>
+          <el-input v-else v-model="manualExtra[field.id]" maxlength="60" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -868,6 +1087,68 @@ const sourceLabel = (item: Address): string =>
   line-height: 1.7;
 }
 
+.field-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.field-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.field-section__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.field-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.field-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.field-item:last-child {
+  border-bottom: none;
+}
+
+.field-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.field-item__label {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.field-item__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field-item__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .color-value {
   margin-left: 10px;
   color: var(--muted);
@@ -928,7 +1209,7 @@ const sourceLabel = (item: Address): string =>
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.14em;
-  color: #8a93a6;
+  color: #5f6b7d;
 }
 
 .fan-preview__title {
@@ -953,7 +1234,7 @@ const sourceLabel = (item: Address): string =>
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
-  color: #97a1b3;
+  color: #667085;
   margin-bottom: 8px;
   background: #fbfcfe;
 }

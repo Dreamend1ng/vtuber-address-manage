@@ -23,9 +23,10 @@ const recentShipped = computed(() =>
     .slice(0, 6),
 )
 
-const autoLockText = computed(() =>
-  vaultState.autoLockMinutes > 0 ? `${vaultState.autoLockMinutes} 分钟无操作后锁定` : '已关闭自动锁定',
-)
+const autoLockText = computed(() => {
+  if (vaultState.autoLockMode === 'interval') return '每 30 分钟检查一次活动'
+  return vaultState.autoLockMinutes > 0 ? `${vaultState.autoLockMinutes} 分钟无操作后锁定` : '已关闭自动锁定'
+})
 
 const clipboardText = computed(() =>
   vaultState.clipboardClearSeconds > 0

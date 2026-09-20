@@ -58,11 +58,24 @@ export function planMerge(group: DuplicateGroup): Address {
     submittedAt: newest.submittedAt ?? keep.submittedAt,
     tags: Array.from(new Set([...keep.tags, ...newest.tags])),
     notes: newest.notes || keep.notes,
+    extra: mergeExtra(group.records),
     trackingNo: withTracking?.trackingNo ?? keep.trackingNo,
     carrier: withTracking?.carrier ?? keep.carrier,
     shippedAt: withTracking?.shippedAt ?? keep.shippedAt ?? null,
     updatedAt: Date.now(),
   }
+}
+
+/** 自定义字段：按提交时间从旧到新覆盖，新提交填过的值优先 */
+function mergeExtra(records: Address[]): Record<string, string> | undefined {
+  const merged: Record<string, string> = {}
+  const ordered = [...records].sort(
+    (a, b) => (a.submittedAt ?? a.createdAt) - (b.submittedAt ?? b.createdAt),
+  )
+  for (const record of ordered) {
+    if (record.extra) Object.assign(merged, record.extra)
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined
 }
 
 export interface MergeSummary {

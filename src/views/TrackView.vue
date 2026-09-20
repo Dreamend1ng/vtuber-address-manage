@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { decodeUrlPayload } from '../crypto/encoding'
@@ -156,7 +156,7 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div class="track-screen" :style="[themeStyle, backdropStyle]">
-    <div class="track-shell">
+    <main class="track-shell">
       <div v-if="phase === 'loading'" class="fan-card fan-card--plain">
         <p class="track-muted">正在读取快递单号…</p>
       </div>
@@ -229,7 +229,7 @@ function formatTime(timestamp: number): string {
           </template>
         </p>
       </div>
-    </div>
+    </main>
   </div>
 </template>
 
@@ -291,7 +291,7 @@ function formatTime(timestamp: number): string {
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  color: #8a93a6;
+  color: #5f6b7d;
   display: block;
   margin-bottom: 6px;
 }
@@ -408,7 +408,7 @@ function formatTime(timestamp: number): string {
 }
 
 .track-result__tail {
-  color: #8a93a6;
+  color: #5f6b7d;
   font-size: 12px;
 }
 
@@ -445,20 +445,20 @@ function formatTime(timestamp: number): string {
   display: flex;
   gap: 10px;
   margin-top: 8px;
-  color: #8a93a6;
+  color: #5f6b7d;
   font-size: 12px;
 }
 
 .track-note {
   margin: 4px 0 0;
-  color: #8a93a6;
+  color: #5f6b7d;
   font-size: 11.5px;
   line-height: 1.7;
 }
 
 .track-foot {
   margin: 16px 0 0;
-  color: #8a93a6;
+  color: #5f6b7d;
   font-size: 11.5px;
   line-height: 1.7;
 }

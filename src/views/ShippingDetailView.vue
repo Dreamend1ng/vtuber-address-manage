@@ -200,7 +200,8 @@ async function shipSingle(address: Address): Promise<void> {
     return
   }
   await shipOne(address)
-  ElMessage.success('已标记为发货，记得点击「更新查询数据」发布给粉丝')
+  await publishQuietly()
+  ElMessage.success('已标记为发货，查询数据已同步更新')
 }
 
 async function unshipSingle(address: Address): Promise<void> {
@@ -214,7 +215,8 @@ async function unshipSingle(address: Address): Promise<void> {
     return
   }
   await unshipOne(address)
-  ElMessage.success('已撤销发货')
+  await publishQuietly()
+  ElMessage.success('已撤销发货，查询数据已同步更新')
 }
 
 /* ---------- 发布与链接 ---------- */
@@ -308,6 +310,7 @@ function exportXlsx(): void {
         v-model="keyword"
         class="search-input"
         placeholder="搜索姓名 / 抖音号 / 手机号 / 单号"
+        aria-label="搜索地址"
         clearable
       />
     </div>

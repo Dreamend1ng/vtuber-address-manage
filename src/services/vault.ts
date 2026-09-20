@@ -10,7 +10,7 @@ import {
 import { generateRecoveryCode, normalizeRecoveryCode } from '../crypto/recovery'
 import { base64ToBytes, bytesToBase64, type Bytes } from '../crypto/encoding'
 import { getVaultMeta, saveVaultMeta, wipeDatabase, type VaultMeta } from '../storage/db'
-import { loadPrefs, savePrefs } from '../utils/prefs'
+import { loadPrefs, savePrefs, type AutoLockMode } from '../utils/prefs'
 
 export type VaultStatus = 'loading' | 'empty' | 'locked' | 'unlocked'
 
@@ -21,6 +21,7 @@ interface VaultState {
   dek: CryptoKey | null
   unlockedAt: number | null
   lastActivity: number
+  autoLockMode: AutoLockMode
   autoLockMinutes: number
   clipboardClearSeconds: number
 }
@@ -31,6 +32,7 @@ const state = reactive<VaultState>({
   dek: null,
   unlockedAt: null,
   lastActivity: Date.now(),
+  autoLockMode: 'idle',
   autoLockMinutes: 15,
   clipboardClearSeconds: 30,
 })
@@ -79,6 +81,7 @@ async function applyUnlocked(dekBytes: Bytes): Promise<void> {
 /** 应用启动时调用：读出本机是否已有保险库（同时清空内存中的会话密钥） */
 export async function initializeVault(): Promise<void> {
   const prefs = loadPrefs()
+  state.autoLockMode = prefs.autoLockMode
   state.autoLockMinutes = prefs.autoLockMinutes
   state.clipboardClearSeconds = prefs.clipboardClearSeconds
   state.dek = null
@@ -201,10 +204,17 @@ export function touchActivity(): void {
   state.lastActivity = Date.now()
 }
 
-export function updatePrefs(next: Partial<Pick<VaultState, 'autoLockMinutes' | 'clipboardClearSeconds'>>): void {
+export function updatePrefs(
+  next: Partial<Pick<VaultState, 'autoLockMode' | 'autoLockMinutes' | 'clipboardClearSeconds'>>,
+): void {
+  if (next.autoLockMode === 'idle' || next.autoLockMode === 'interval') state.autoLockMode = next.autoLockMode
   if (typeof next.autoLockMinutes === 'number') state.autoLockMinutes = next.autoLockMinutes
   if (typeof next.clipboardClearSeconds === 'number') state.clipboardClearSeconds = next.clipboardClearSeconds
-  savePrefs({ autoLockMinutes: state.autoLockMinutes, clipboardClearSeconds: state.clipboardClearSeconds })
+  savePrefs({
+    autoLockMode: state.autoLockMode,
+    autoLockMinutes: state.autoLockMinutes,
+    clipboardClearSeconds: state.clipboardClearSeconds,
+  })
 }
 
 export function requireDek(): CryptoKey {
