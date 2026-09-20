@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Download, Grid, Link, Plus, Refresh, Upload, View } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Download, Grid, Link, Operation, Plus, Refresh, Upload, View } from '@element-plus/icons-vue'
 import type { Address } from '../types/models'
 import { collectionSettings, eventSubmissions, findEvent, removeAddress, saveEvent } from '../services/records'
 import {
@@ -17,6 +17,7 @@ import {
   trackUrlFor,
 } from '../services/events'
 import { addressStatus } from '../services/shipping'
+import { findDuplicateGroups, mergeDuplicateGroups, type DuplicateGroup } from '../services/duplicates'
 import { loadAssetBlob, removeAsset, saveAssetBlob } from '../services/assets'
 import { copyText } from '../utils/clipboard'
 import { fileToResizedJpeg, readFileInput } from '../utils/image'
@@ -334,6 +335,66 @@ async function confirmRemoveSubmission(item: Address): Promise<void> {
   ElMessage.success('已删除')
 }
 
+/* ---------- 合并重复提交 ---------- */
+
+interface DedupeRow extends DuplicateGroup {
+  selected: boolean
+}
+
+const dedupeDialog = ref(false)
+const dedupeRows = ref<DedupeRow[]>([])
+const deduping = ref(false)
+
+const duplicateCount = computed(() => findDuplicateGroups(eventId.value).length)
+const dedupeLabel = computed(() =>
+  duplicateCount.value > 0 ? `合并重复（${duplicateCount.value}）` : '合并重复',
+)
+const selectedDedupe = computed(() => dedupeRows.value.filter((row) => row.selected))
+
+function openDedupe(): void {
+  const groups = findDuplicateGroups(eventId.value)
+  if (groups.length === 0) {
+    ElMessage.info('没有发现重复提交')
+    return
+  }
+  dedupeRows.value = groups.map((group) => ({ ...group, selected: true }))
+  dedupeDialog.value = true
+}
+
+function keepLabel(row: DedupeRow): string {
+  const keep = row.records.find((record) => record.id === row.keepId)
+  if (!keep) return '—'
+  return `${keep.name} · ${keep.shippedAt ? '已发货' : '最新提交'}`
+}
+
+function mergeLabel(row: DedupeRow): string {
+  const withTracking = row.records.find((record) => record.trackingNo)
+  if (!withTracking) return '无单号'
+  const carrier = withTracking.carrier ? `${withTracking.carrier} · ` : ''
+  const shipped = withTracking.shippedAt ? '（已发货）' : ''
+  return `${carrier}${withTracking.trackingNo}${shipped}`
+}
+
+async function confirmDedupe(): Promise<void> {
+  const selected = selectedDedupe.value
+  if (selected.length === 0) return
+  deduping.value = true
+  try {
+    const groups: DuplicateGroup[] = selected.map((row) => ({
+      phone: row.phone,
+      records: row.records,
+      keepId: row.keepId,
+    }))
+    const summary = await mergeDuplicateGroups(groups)
+    dedupeDialog.value = false
+    ElMessage.success(`已合并 ${summary.groups} 组，删除 ${summary.removed} 条重复记录`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '合并失败')
+  } finally {
+    deduping.value = false
+  }
+}
+
 /* ---------- 手动补录 ---------- */
 
 const manualDialog = ref(false)
@@ -585,6 +646,9 @@ const sourceLabel = (item: Address): string =>
           </el-button>
           <el-button :icon="Download" @click="exportSubmissions">导出 Excel</el-button>
           <el-button :icon="Plus" @click="manualDialog = true">手动补录</el-button>
+          <el-button :icon="Operation" :disabled="duplicateCount === 0" @click="openDedupe">
+            {{ dedupeLabel }}
+          </el-button>
           <el-input
             v-model="keyword"
             class="search-input"
@@ -696,6 +760,48 @@ const sourceLabel = (item: Address): string =>
       <template #footer>
         <el-button @click="manualDialog = false">取消</el-button>
         <el-button type="primary" :loading="manualSaving" @click="submitManual">保存</el-button>
+      </template>
+    </el-dialog>
+    <!-- 合并重复提交 -->
+    <el-dialog v-model="dedupeDialog" title="合并重复提交" width="780px">
+      <p class="dialog-desc">
+        发现 {{ dedupeRows.length }} 组手机号相同的提交。每组保留 1 条：地址信息取最新一次提交，快递单号与发货状态优先保留已发货的那条，其余重复记录会被删除。
+      </p>
+      <div class="dedupe-scroll">
+        <el-table :data="dedupeRows" size="small" style="width: 100%">
+          <el-table-column width="50">
+            <template #default="{ row }">
+              <el-checkbox v-model="row.selected" />
+            </template>
+          </el-table-column>
+          <el-table-column label="手机号" width="140">
+            <template #default="{ row }">
+              <span class="mono">{{ row.phone }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="重复条数" width="90">
+            <template #default="{ row }">
+              <span class="mono">{{ row.records.length }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="保留" min-width="140">
+            <template #default="{ row }">{{ keepLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="合并的单号" min-width="180">
+            <template #default="{ row }">{{ mergeLabel(row) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="dedupeDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="deduping"
+          :disabled="selectedDedupe.length === 0"
+          @click="confirmDedupe"
+        >
+          合并选中的 {{ selectedDedupe.length }} 组
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -942,6 +1048,13 @@ const sourceLabel = (item: Address): string =>
 .search-input {
   max-width: 260px;
   min-width: 180px;
+}
+
+.dedupe-scroll {
+  max-height: 46vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .cell-sub {
